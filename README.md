@@ -2,7 +2,7 @@
 
 ## 本仓库的 GitHub Actions 配置
 
-本仓库默认每 6 小时同步一次中国区 → 国际区（北京时间约 02:00、08:00、14:00、20:00，GitHub 调度可能延迟）。反向同步与历史迁移仅支持手动运行。
+两个方向都按**每小时**自动同步：中国区 → 国际区在每小时 `:00`，国际区 → 中国区在每小时 `:30`（错开是为了避开同一个 `garmin-state` 并发组；GitHub 的 cron 可能延迟几分钟，高峰期偶尔会顺延）。历史迁移仍只支持手动运行。
 
 在 [Actions Secrets 设置](https://github.com/hyperMoss/dailysync-rev/settings/secrets/actions) 点击 **New repository secret**，分别保存以下九项：
 

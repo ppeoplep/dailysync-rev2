@@ -16,8 +16,8 @@ on:
           - sync_all_global_to_cn
           - sync_wellness_global_to_cn
   schedule:
-    #  每6小时检查一次
-    - cron: "0 */6 * * *"
+    #  每小时检查一次（:00 触发；反向同步在 :30，避免两个 workflow 抢同一个并发组）
+    - cron: "0 * * * *"
 
 permissions:
   contents: read
