@@ -13,8 +13,8 @@ import { GarminClientType } from './type';
 import { number2capital, toSafeInt } from './number_tricks';
 const core = require('@actions/core');
 import _ from 'lodash';
-import { getSessionFromDB, getSyncCursor, initDB, saveSessionToDB, setSyncCursor, updateSessionToDB } from './sqlite';
-import { getSessionFromEnv } from './garmin_session_env';
+import { getSyncCursor, setSyncCursor } from './sqlite';
+import { acquireGarminSession, describeAuthFailure } from './garmin_auth';
 import { migrateGarminWellnessByDateRange, syncGarminWellnessRecentDays } from './garmin_wellness';
 
 const CryptoJS = require('crypto-js');
@@ -40,36 +40,8 @@ export const getGaminCNClient = async (): Promise<GarminClientType> => {
     const GCClient = new GarminConnect({username: GARMIN_USERNAME, password: GARMIN_PASSWORD}, 'garmin.cn');
 
     try {
-        await initDB();
-
-        const envSession = getSessionFromEnv('CN');
-        if (envSession) {
-            console.log('GarminCN: login by env session');
-            await GCClient.loadToken(envSession.oauth1, envSession.oauth2);
-            const currentSession = await getSessionFromDB('CN');
-            if (currentSession) {
-                await updateSessionToDB('CN', GCClient.exportToken());
-            } else {
-                await saveSessionToDB('CN', GCClient.exportToken());
-            }
-        } else {
-            const currentSession = await getSessionFromDB('CN');
-            if (!currentSession) {
-                await GCClient.login();
-                await saveSessionToDB('CN', GCClient.exportToken());
-            } else {
-                //  Wrap error message in GCClient, prevent terminate in github actions.
-                try {
-                    console.log('GarminCN: login by saved session');
-                    await GCClient.loadToken(currentSession.oauth1, currentSession.oauth2);
-                } catch (e) {
-                    console.log('Warn: renew  GarminCN Session..');
-                    await GCClient.login(GARMIN_USERNAME, GARMIN_PASSWORD);
-                    await updateSessionToDB('CN', GCClient.exportToken());
-                }
-
-            }
-        }
+        // Secrets 会话 → 缓存会话 → 账号密码；Actions 上默认禁止密码登录（佳明返回 429）
+        await acquireGarminSession(GCClient, 'CN', { username: GARMIN_USERNAME, password: GARMIN_PASSWORD });
 
         const userInfo = await GCClient.getUserProfile();
         const { fullName, userName: emailAddress, location } = userInfo;
@@ -80,8 +52,12 @@ export const getGaminCNClient = async (): Promise<GarminClientType> => {
 
         return GCClient;
     } catch (err) {
+        // 这里必须继续抛出：吞掉异常会让上层拿到 undefined 客户端，
+        // 报出误导性的 "Cannot read properties of undefined (reading 'getActivities')"，把真实原因埋掉
+        const message = describeAuthFailure(err, 'CN');
         console.error(err);
-        core.setFailed(err);
+        core.setFailed(message);
+        throw new Error(message);
     }
 };
 

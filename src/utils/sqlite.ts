@@ -33,6 +33,11 @@ export const getDB = async () => {
 export const saveSessionToDB = async (type: 'CN' | 'GLOBAL', session: Record<string, any>) => {
     const db = await getDB();
     const encryptedSessionStr = encryptSession(session);
+    // 覆盖写：同一 user+region 只保留一条，避免历史重复行让后续读取取到旧令牌
+    await db.run(
+        'DELETE FROM garmin_session WHERE user = ? AND region = ?',
+        GARMIN_USERNAME, type,
+    );
     await db.run(
         `INSERT INTO garmin_session (user,region,session) VALUES (?,?,?)`,
         GARMIN_USERNAME, type, encryptedSessionStr,
@@ -53,15 +58,21 @@ export const updateSessionToDB = async (type: 'CN' | 'GLOBAL', session: Record<s
 export const getSessionFromDB = async (type: 'CN' | 'GLOBAL'): Promise<Record<string, any> | undefined> => {
     const db = await getDB();
     const queryResult = await db.get(
-        'SELECT session FROM garmin_session WHERE user = ? AND region = ? ',
+        'SELECT session FROM garmin_session WHERE user = ? AND region = ? ORDER BY id DESC LIMIT 1',
         GARMIN_USERNAME, type,
     );
     if (!queryResult) {
         return undefined;
     }
     const encryptedSessionStr = queryResult?.session;
-    // return {}
-    return decryptSession(encryptedSessionStr);
+    try {
+        return decryptSession(encryptedSessionStr);
+    } catch (error) {
+        throw new Error(
+            `无法解密 ${type} 会话（AESKEY 与缓存不匹配？）：请先删除 Actions → Caches 中的 garmin-state-v1-* 后重跑。`
+            + `原始错误：${String((error as any)?.message ?? error)}`,
+        );
+    }
 };
 
 export const getSyncCursor = async (direction: string): Promise<{ direction: string; lastSyncStartTime: string } | undefined> => {

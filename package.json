@@ -19,6 +19,7 @@
     "migrate_wellness_global_to_cn": "ts-node src/migrate_wellness_garmin_global_to_cn.ts",
     "migrate_wellness_cn_to_global": "ts-node src/migrate_wellness_garmin_cn_to_global.ts",
     "export_garmin_sessions": "ts-node src/export_garmin_sessions.ts",
+    "bootstrap_sessions": "ts-node src/bootstrap_garmin_sessions.ts",
     "start2": "node dist/index.js",
     "dev": "nodemon dist/index.js",
     "dev2": "nodemon --exec ts-node src/rq.ts",

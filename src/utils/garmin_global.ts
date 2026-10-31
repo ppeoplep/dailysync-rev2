@@ -11,8 +11,8 @@ import { logMigrationFailure, MIGRATE_GLOBAL2CN_LOG_NAME } from './migration_log
 import { number2capital, toSafeInt } from './number_tricks';
 const core = require('@actions/core');
 import _ from 'lodash';
-import { getSessionFromDB, getSyncCursor, initDB, saveSessionToDB, setSyncCursor, updateSessionToDB } from './sqlite';
-import { getSessionFromEnv } from './garmin_session_env';
+import { getSyncCursor, setSyncCursor } from './sqlite';
+import { acquireGarminSession, describeAuthFailure } from './garmin_auth';
 import { migrateGarminWellnessByDateRange, syncGarminWellnessRecentDays } from './garmin_wellness';
 
 const { GarminConnect } = require('@gooin/garmin-connect');
@@ -35,38 +35,12 @@ export const getGaminGlobalClient = async (): Promise<GarminClientType> => {
     const GCClient = new GarminConnect({username: GARMIN_GLOBAL_USERNAME, password: GARMIN_GLOBAL_PASSWORD});
 
     try {
-        await initDB();
+        // Secrets 会话 → 缓存会话 → 账号密码；Actions 上默认禁止密码登录（佳明返回 429）
+        await acquireGarminSession(GCClient, 'GLOBAL', {
+            username: GARMIN_GLOBAL_USERNAME,
+            password: GARMIN_GLOBAL_PASSWORD,
+        });
 
-        const envSession = getSessionFromEnv('GLOBAL');
-        if (envSession) {
-            console.log('GarminGlobal: login by env session');
-            await GCClient.loadToken(envSession.oauth1, envSession.oauth2);
-            const currentSession = await getSessionFromDB('GLOBAL');
-            if (currentSession) {
-                await updateSessionToDB('GLOBAL', GCClient.exportToken());
-            } else {
-                await saveSessionToDB('GLOBAL', GCClient.exportToken());
-            }
-        } else {
-            const currentSession = await getSessionFromDB('GLOBAL');
-            if (!currentSession) {
-                await GCClient.login();
-                await saveSessionToDB('GLOBAL', GCClient.exportToken());
-            } else {
-                //  Wrap error message in GCClient, prevent terminate in github actions.
-                try {
-                    console.log('GarminGlobal: login by saved session');
-                    await GCClient.loadToken(currentSession.oauth1, currentSession.oauth2);
-                } catch (e) {
-                    // 只在登录默认session登录失败，catch到登录错误，需要重新登录时注册sessionChange事件
-                    console.log('Warn: renew GarminGlobal session..');
-                    await GCClient.login(GARMIN_GLOBAL_USERNAME, GARMIN_GLOBAL_PASSWORD);
-                    await updateSessionToDB('GLOBAL', GCClient.exportToken());
-
-                }
-
-            }
-        }
         const userInfo = await GCClient.getUserProfile();
         const { fullName, userName: emailAddress, location } = userInfo;
         if (!emailAddress) {
@@ -75,8 +49,11 @@ export const getGaminGlobalClient = async (): Promise<GarminClientType> => {
         console.log('Garmin userInfo global', { fullName, emailAddress, location });
         return GCClient;
     } catch (err) {
+        // 这里必须继续抛出：吞掉异常会让上层拿到 undefined 客户端，报出误导性错误并掩盖真实原因
+        const message = describeAuthFailure(err, 'GLOBAL');
         console.error(err);
-        core.setFailed(err);
+        core.setFailed(message);
+        throw new Error(message);
     }
 };
 
