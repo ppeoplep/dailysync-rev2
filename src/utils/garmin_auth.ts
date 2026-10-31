@@ -61,6 +61,14 @@ export const isRateLimited = (error: any): boolean =>
 export const isSessionRejected = (error: any): boolean =>
     /\((400|401|403)\)|no oauth2token|refresh/i.test(extractErrorMessage(error));
 
+/**
+ * 网络层失败：@gooin/garmin-connect 的响应拦截器在拿不到 HTTP 响应时，
+ * 会先抛 TypeError（reading 'status'），把真实的 DNS/TLS/连接错误吞掉。
+ */
+export const isTransportFailure = (error: any): boolean =>
+    /reading '(status|response|config)'|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNABORTED|socket hang up|UNABLE_TO_VERIFY|CERT_|self signed/i
+        .test(extractErrorMessage(error));
+
 /** 已经是「可照做」的认证错误，describeAuthFailure 不再二次包装 */
 export class GarminAuthError extends Error {
     constructor(message: string) {
@@ -157,6 +165,11 @@ export const describeAuthFailure = (error: any, region: GarminSessionRegion): st
     if (isSessionRejected(error)) {
         return `${label} 会话令牌已失效（${message}）：`
             + `请重新执行 yarn bootstrap_sessions 并更新 ${oauth1EnvName} / ${oauth2EnvName}。`;
+    }
+
+    if (isTransportFailure(error)) {
+        return `${label} 请求佳明接口时网络层失败（${message}）：会话文件本身可能是有效的，`
+            + '卡在 runner 到接口主机（connectapi.*）的连通性上，具体原因见上方 [net] 探测输出。';
     }
 
     return `${label} 登录失败：${message}`;

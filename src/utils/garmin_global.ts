@@ -13,6 +13,7 @@ const core = require('@actions/core');
 import _ from 'lodash';
 import { getSyncCursor, setSyncCursor } from './sqlite';
 import { acquireGarminSession, describeAuthFailure } from './garmin_auth';
+import { hardenGarminTransport, probeGarminApiConnectivity } from './garmin_network';
 import { migrateGarminWellnessByDateRange, syncGarminWellnessRecentDays } from './garmin_wellness';
 
 const { GarminConnect } = require('@gooin/garmin-connect');
@@ -33,6 +34,7 @@ export const getGaminGlobalClient = async (): Promise<GarminClientType> => {
     }
 
     const GCClient = new GarminConnect({username: GARMIN_GLOBAL_USERNAME, password: GARMIN_GLOBAL_PASSWORD});
+    hardenGarminTransport(GCClient, 'GarminGlobal');
 
     try {
         // Secrets 会话 → 缓存会话 → 账号密码；Actions 上默认禁止密码登录（佳明返回 429）
@@ -50,8 +52,10 @@ export const getGaminGlobalClient = async (): Promise<GarminClientType> => {
         return GCClient;
     } catch (err) {
         // 这里必须继续抛出：吞掉异常会让上层拿到 undefined 客户端，报出误导性错误并掩盖真实原因
-        const message = describeAuthFailure(err, 'GLOBAL');
         console.error(err);
+        // 只在失败时探测：确认是「认证问题」还是「runner 到佳明接口的网络问题」
+        const probe = await probeGarminApiConnectivity('GLOBAL');
+        const message = `${describeAuthFailure(err, 'GLOBAL')}\n${probe}`;
         core.setFailed(message);
         throw new Error(message);
     }

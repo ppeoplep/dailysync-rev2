@@ -133,6 +133,11 @@ OAuth1 和 OAuth2 都是 JSON 对象。OAuth2 可能还包含 `token_type`、`ex
 
 会话会过期（看 `Report Garmin session secrets` 步骤打印的剩余天数），到期后重复第 2 步。若仍无法在 Actions 上稳定运行，可改为本地 / Docker 定时运行。
 
+失败时日志里会带一组 `[net]` 探测行，用来区分两类问题：
+
+- `HTTP 401 / 403`：网络与 TLS 正常，问题在令牌（重新 `yarn bootstrap_sessions`）
+- `超时 / ECONNRESET / ENOTFOUND`：runner 到 `connectapi.garmin.cn` 被阻断（机房 IP 被 Cloudflare 拦截或 IPv6 不可达），这种情况代码改不动，只能在本地 / 有代理的环境运行
+
 ## 【2025-12说明】开启了ECG功能的说明
 开通了ECG功能的佳明账号，因为登录佳明时需要提供验证码，开通ECG后，这个验证码无法关闭，github上要中途要输入一次验证码，本同步脚本无法支持，下方的Web版本做了兼容，可以使用。 
 

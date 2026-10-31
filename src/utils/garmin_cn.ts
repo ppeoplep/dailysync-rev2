@@ -15,6 +15,7 @@ const core = require('@actions/core');
 import _ from 'lodash';
 import { getSyncCursor, setSyncCursor } from './sqlite';
 import { acquireGarminSession, describeAuthFailure } from './garmin_auth';
+import { hardenGarminTransport, probeGarminApiConnectivity } from './garmin_network';
 import { migrateGarminWellnessByDateRange, syncGarminWellnessRecentDays } from './garmin_wellness';
 
 const CryptoJS = require('crypto-js');
@@ -38,6 +39,7 @@ export const getGaminCNClient = async (): Promise<GarminClientType> => {
     }
 
     const GCClient = new GarminConnect({username: GARMIN_USERNAME, password: GARMIN_PASSWORD}, 'garmin.cn');
+    hardenGarminTransport(GCClient, 'GarminCN');
 
     try {
         // Secrets 会话 → 缓存会话 → 账号密码；Actions 上默认禁止密码登录（佳明返回 429）
@@ -54,8 +56,10 @@ export const getGaminCNClient = async (): Promise<GarminClientType> => {
     } catch (err) {
         // 这里必须继续抛出：吞掉异常会让上层拿到 undefined 客户端，
         // 报出误导性的 "Cannot read properties of undefined (reading 'getActivities')"，把真实原因埋掉
-        const message = describeAuthFailure(err, 'CN');
         console.error(err);
+        // 只在失败时探测：确认是「认证问题」还是「runner 到佳明接口的网络问题」
+        const probe = await probeGarminApiConnectivity('CN');
+        const message = `${describeAuthFailure(err, 'CN')}\n${probe}`;
         core.setFailed(message);
         throw new Error(message);
     }
